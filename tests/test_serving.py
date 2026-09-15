@@ -17,8 +17,12 @@ sys.path.insert(0, str(REPO_ROOT))
 
 
 @pytest.fixture(scope="module")
-def client():
+def client(tmp_path_factory):
+    import os
+
     from fastapi.testclient import TestClient
+
+    os.environ["FIR_AUDIT_LOG"] = str(tmp_path_factory.mktemp("audit") / "drafts.jsonl")
 
     from fir.orchestrator.graph import build_slice_graph
     from fir.serving import app as serving
@@ -172,3 +176,62 @@ def test_statute_lookup_unknown_section_is_not_an_error(client):
     r = client.get("/v1/statute/999")
     assert r.status_code == 200
     assert r.json()["found"] is False and r.json()["cognizable"] == "unknown"
+
+
+def test_browser_recording_blob_is_accepted_by_mime_type(client):
+    """MediaRecorder posts `audio/webm;codecs=opus` with whatever filename the
+    page gives it; the suffix PyAV needs comes from the MIME type."""
+    r = client.post("/v1/complaint/audio",
+                    files={"file": ("recording", b"\x1a\x45\xdf\xa3 webm bytes", "audio/webm;codecs=opus")})
+    assert r.status_code == 200, r.text
+    assert r.json()["decision"]["source"] == "audio"
+
+
+def test_unknown_audio_type_is_415_and_empty_upload_is_400(client):
+    r = client.post("/v1/complaint/audio", files={"file": ("x.exe", b"MZ....", "application/octet-stream")})
+    assert r.status_code == 415 and ".webm" in r.json()["detail"]
+    r = client.post("/v1/complaint/audio", files={"file": ("c.wav", b"", "audio/wav")})
+    assert r.status_code == 400
+
+
+def test_oversized_audio_is_413(client, monkeypatch):
+    from fir.serving import app as serving
+
+    monkeypatch.setattr(serving, "MAX_AUDIO_BYTES", 1024)
+    r = client.post("/v1/complaint/audio", files={"file": ("c.wav", b"x" * 4096, "audio/wav")})
+    assert r.status_code == 413
+
+
+def test_health_reports_prewarm_off_and_no_resident_asr_by_default(client, monkeypatch):
+    monkeypatch.delenv("FIR_PREWARM", raising=False)
+    h = client.get("/v1/health").json()
+    assert h["prewarm"] is False and h["asr_loaded"] is False
+
+
+def test_every_draft_is_audit_logged_without_its_text(client):
+    import json
+    import os
+    from pathlib import Path
+
+    log = Path(os.environ["FIR_AUDIT_LOG"])
+    before = len(log.read_text(encoding="utf-8").splitlines()) if log.exists() else 0
+    r1 = client.post("/v1/complaint/text", json={"narrative": "harassed for dowry and found dead"}).json()
+    r2 = client.post("/v1/complaint/text", json={"narrative": "the neighbour slapped him during an argument"}).json()
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == before + 2                      # append-only, one line per draft
+    e1, e2 = json.loads(lines[-2]), json.loads(lines[-1])
+    assert e1["record_id"] == r1["record"]["record_id"] and e2["record_id"] == r2["record"]["record_id"]
+    assert e1["route"] == "FIR" and "BNS 80" in e1["bns_sections"]
+    assert e2["route"] == "CSR" and e2["status"] == "csr_advisory"
+    assert "dowry" not in lines[-2] and "slapped" not in lines[-1]   # hashes, not text
+    assert len(e1["narrative_sha256"]) == 64
+    assert client.get("/v1/health").json()["audit_entries"] == before + 2
+
+
+def test_audit_log_can_be_disabled(client, monkeypatch):
+    monkeypatch.setenv("FIR_AUDIT_LOG", "")
+    from fir.serving import audit
+
+    assert audit.log_path() is None and audit.count() == 0
+    assert audit.append({"x": 1}) is None
+    assert client.post("/v1/complaint/text", json={"narrative": "stole a phone worth Rs 9,000"}).status_code == 200

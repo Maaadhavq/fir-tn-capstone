@@ -140,6 +140,27 @@ def asr_section(out: list[str]) -> None:
         out.append("\nRun with the library's temperature-fallback ladder on, so every RTF here carries the "
                    "re-decoding cost (see the profile below); the WER ordering (int8 best) stands.\n")
 
+    sweep = sorted(REPORTS.glob("asr_baseline_rp*.json")) + sorted(REPORTS.glob("asr_baseline_nr*.json"))
+    if sweep and rep:
+        out.append("### Decoder brakes on the replay loop (finding 6g; same 60 clips, T=0, batched)\n")
+        out.append("| setting | WER | CER | RTF | flagged | clip 1916 WER | clip 1721 WER |")
+        out.append("|---|---:|---:|---:|---:|---:|---:|")
+
+        def _clip(r, cid):
+            for c in r.get("per_clip", []):
+                if c["id"] == cid and c.get("flags") is not None and c["file"] in ("12583250098003224463.wav", "16989398024822917306.wav"):
+                    return _pct(c["wer"]) + (" ⚑" if c["flags"] else "")
+            return "—"
+
+        for label, r in [("default (rp 1.0, nr 0)", rep)] + [(p.stem.replace("asr_baseline_", ""), _load(p.name)) for p in sweep]:
+            if not r:
+                continue
+            label = label.replace("rp", "rp ").replace("_nr", ", nr ").replace("nr", "nr ") if label != "default (rp 1.0, nr 0)" else label
+            out.append(f"| {label} | {_pct(r['wer'])} | {_pct(r['cer'])} | {r['rtf']:.2f} | {r.get('n_flagged', '—')} "
+                       f"| {_clip(r, '1916')} | {_clip(r, '1721')} |")
+        out.append("\n`rp` = CTranslate2 repetition_penalty, `nr` = no_repeat_ngram_size (token n-grams). ⚑ = the "
+                   "transcript guard fired. The pipeline default is whichever row PROGRESS.md finding 6g adopted.\n")
+
     prof = _load("asr_profile.json")
     if prof:
         out.append(f"### Where the time goes ({prof['n_clips']} clips; {prof.get('gpu', '')}; CTranslate2 {prof.get('ctranslate2', '?')})\n")

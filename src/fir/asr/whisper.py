@@ -106,6 +106,8 @@ class WhisperAsr:
         condition_on_previous_text: bool | None = None,
         temperature: float | list[float] | None = None,
         batch_size: int | None = None,
+        repetition_penalty: float | None = None,
+        no_repeat_ngram_size: int | None = None,
     ):
         cfg = pipeline()["asr"]
         self.model_name = model_name or cfg["model"]
@@ -141,6 +143,17 @@ class WhisperAsr:
         # 0.81 -> 0.49 at beam 5), because chunks follow the speaker's pauses
         # instead of cutting sentences at fixed offsets. 0 = sequential decode.
         self.batch_size = int(batch_size if batch_size is not None else cfg.get("batch_size", 0))
+        # Decoder-side brakes on the replay loop (finding 6f: 2/60 clips still
+        # repeat at temperature 0). repetition_penalty > 1 divides the logit of
+        # every token already emitted; no_repeat_ngram_size > 0 forbids a token
+        # n-gram from recurring. Both are CTranslate2 generation options; the
+        # 60-clip sweep in PROGRESS.md decides the defaults in pipeline.yaml.
+        self.repetition_penalty = float(
+            repetition_penalty if repetition_penalty is not None else cfg.get("repetition_penalty", 1.0)
+        )
+        self.no_repeat_ngram_size = int(
+            no_repeat_ngram_size if no_repeat_ngram_size is not None else cfg.get("no_repeat_ngram_size", 0)
+        )
         self._model = None
         self._batched = None
         self.resolved_device: str = ""
@@ -215,6 +228,8 @@ class WhisperAsr:
                 batch_size=self.batch_size,
                 vad_filter=True,
                 temperature=self.temperature,
+                repetition_penalty=self.repetition_penalty,
+                no_repeat_ngram_size=self.no_repeat_ngram_size,
             )
         else:
             segments, info = model.transcribe(
@@ -224,6 +239,8 @@ class WhisperAsr:
                 vad_filter=self.vad_filter,
                 condition_on_previous_text=self.condition_on_previous_text,
                 temperature=self.temperature,
+                repetition_penalty=self.repetition_penalty,
+                no_repeat_ngram_size=self.no_repeat_ngram_size,
             )
         # `segments` is a generator; decoding happens on iteration.
         segs = [

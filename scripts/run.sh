@@ -27,7 +27,7 @@ case "$target" in
     lint)         "$PY" -m ruff check src harness tests --select E,F,W,I --ignore E501 "$@" ;;
     extract-eval) "$PY" -m harness.run_extraction_eval "$@" ;;
     results)      "$PY" -m harness.summarize ;;
-    serve)        cd src && exec "$PY" -m uvicorn fir.serving.app:app --host 127.0.0.1 --port 8000 ;;
+    serve)        cd src && exec "$PY" -m uvicorn fir.serving.app:app --host 127.0.0.1 --port 8000 ;;   # FIR_PREWARM=1 loads Whisper at startup
     clean)        rm -rf artifacts/models/* artifacts/reports/*; find . -name __pycache__ -type d -prune -exec rm -rf {} + ;;
     *)            echo "unknown target: $target" >&2; exit 2 ;;
 esac

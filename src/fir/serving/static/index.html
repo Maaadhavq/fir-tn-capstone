@@ -52,6 +52,12 @@
             font-size: 13px; margin-top: 12px; }
   .muted { color: var(--muted); font-size: 13px; }
   .hidden { display: none; }
+  .speech { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; padding: 8px 10px;
+            border: 1px dashed var(--line); border-radius: 6px; }
+  .speech button.rec { background: var(--bad); color: #fff; border-color: var(--bad); }
+  .speech button.rec.on { animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
+  .speech input[type=file] { font-size: 12px; max-width: 220px; }
   footer { padding: 10px 22px 24px; color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -69,6 +75,15 @@
       <button id="draft">Draft IF-1</button>
       <label class="muted"><input type="checkbox" id="annotate" checked> annotate machine-filled slots</label>
       <span id="status" class="muted"></span>
+    </div>
+    <div class="speech">
+      <span class="muted"><b>Speak it:</b></span>
+      <button id="rec" class="rec" title="Record a spoken complaint (Tamil or mixed) with the microphone">● Record</button>
+      <span id="rec-time" class="muted"></span>
+      <span class="muted">or</span>
+      <input type="file" id="audio-file" accept="audio/*,.wav,.mp3,.m4a,.webm,.ogg,.flac" title="Upload a recording">
+      <button id="audio-send" class="secondary" disabled>Transcribe &amp; draft</button>
+      <span id="audio-status" class="muted"></span>
     </div>
     <div class="row samples muted">
       samples:
@@ -163,6 +178,69 @@
   };
   $('lookup').addEventListener('click', lookup);
   $('lookup-q').addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
+
+  // --- spoken complaint: microphone or file -> POST /v1/complaint/audio -------
+  // The browser records webm/opus (Chrome/Edge) or mp4 (Safari); the server
+  // picks the container from the MIME type, Whisper decodes it through PyAV,
+  // the transcript lands in the textarea and the same decision renders below.
+  let recorder = null, chunks = [], recStart = 0, recTimer = null;
+  const MAX_REC_S = 120;
+  const pickMime = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
+    .find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+  const suffixFor = (mime) => mime.includes('webm') ? '.webm' : mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.bin';
+
+  async function sendAudio(blob, name) {
+    $('audio-status').textContent = `transcribing ${(blob.size / 1024).toFixed(0)} KB…`;
+    $('draft').disabled = true; $('rec').disabled = true; $('audio-send').disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append('file', blob, name);
+      const r = await fetch('/v1/complaint/audio?annotate=' + ($('annotate').checked ? 'true' : 'false'), { method: 'POST', body: fd });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.statusText); }
+      const d = await r.json();
+      $('narrative').value = d.decision.transcript || '';
+      $('audio-status').textContent = `transcribed in ${(d.elapsed_ms / 1000).toFixed(1)} s` +
+        (d.asr_flags.length ? ` — ASR flagged: ${d.asr_flags.join(', ')}` : '');
+      render(d);
+    } catch (e) {
+      $('audio-status').textContent = 'error: ' + e.message;
+    } finally { $('draft').disabled = false; $('rec').disabled = false; $('audio-send').disabled = !$('audio-file').files.length; }
+  }
+
+  $('rec').addEventListener('click', async () => {
+    if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+    const mime = pickMime();
+    if (!mime) { $('audio-status').textContent = 'this browser cannot record; upload a file instead'; return; }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    } catch (e) { $('audio-status').textContent = 'microphone unavailable: ' + e.message; return; }
+    chunks = [];
+    recorder = new MediaRecorder(stream, { mimeType: mime });
+    recorder.ondataavailable = ev => { if (ev.data.size) chunks.push(ev.data); };
+    recorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      clearInterval(recTimer); $('rec').classList.remove('on'); $('rec').textContent = '● Record';
+      const blob = new Blob(chunks, { type: mime });
+      $('rec-time').textContent = '';
+      if (blob.size < 2000) { $('audio-status').textContent = 'recording too short'; return; }
+      sendAudio(blob, 'recording' + suffixFor(mime));
+    };
+    recorder.start(250);
+    recStart = Date.now();
+    $('rec').classList.add('on'); $('rec').textContent = '■ Stop'; $('audio-status').textContent = 'recording… speak the complaint, then Stop';
+    recTimer = setInterval(() => {
+      const s = Math.round((Date.now() - recStart) / 1000);
+      $('rec-time').textContent = `${s}s`;
+      if (s >= MAX_REC_S && recorder.state === 'recording') recorder.stop();
+    }, 500);
+  });
+
+  $('audio-file').addEventListener('change', () => { $('audio-send').disabled = !$('audio-file').files.length; });
+  $('audio-send').addEventListener('click', () => {
+    const f = $('audio-file').files[0];
+    if (f) sendAudio(f, f.name);
+  });
 
   $('draft').addEventListener('click', async () => {
     const narrative = $('narrative').value.trim();

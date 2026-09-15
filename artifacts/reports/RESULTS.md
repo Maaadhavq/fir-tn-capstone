@@ -1,4 +1,4 @@
-# FIR-TN — results as of 2026-09-13
+# FIR-TN — results as of 2026-09-15
 
 All numbers below are read from `artifacts/reports/*.json`; nothing is recomputed here. Caveats and interpretation live in `PROGRESS.md`.
 
@@ -92,6 +92,16 @@ Tamil is agglutinative: one boundary decision changes the word count, so **CER i
 | int8_float16/vad | 55.39% | 28.42% | 3.444 |
 
 Run with the library's temperature-fallback ladder on, so every RTF here carries the re-decoding cost (see the profile below); the WER ordering (int8 best) stands.
+
+### Decoder brakes on the replay loop (finding 6g; same 60 clips, T=0, batched)
+
+| setting | WER | CER | RTF | flagged | clip 1916 WER | clip 1721 WER |
+|---|---:|---:|---:|---:|---:|---:|
+| default (rp 1.0, nr 0) | 51.41% | 15.05% | 0.46 | 2 | 178.26% ⚑ | 141.67% ⚑ |
+| rp 11 | 53.81% | 14.71% | 0.44 | 1 | 139.13% ⚑ | 50.00% |
+| rp 12 | 57.66% | 14.76% | 0.49 | 0 | 100.00% | 41.67% |
+
+`rp` = CTranslate2 repetition_penalty, `nr` = no_repeat_ngram_size (token n-grams). ⚑ = the transcript guard fired. The pipeline default is whichever row PROGRESS.md finding 6g adopted.
 
 ### Where the time goes (8 clips; NVIDIA GeForce RTX 5050 Laptop GPU; CTranslate2 4.8.2)
 

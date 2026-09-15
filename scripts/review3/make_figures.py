@@ -200,7 +200,7 @@ def fig_milestones() -> None:
         ("P3.4", "Cognizability gate (gazette Schedule)", 2),
         ("P4.1", "Deterministic IF-1 template engine", 2), ("P4.2", "Grounded narrative (deterministic v0)", 1), ("P4.3", "Faithfulness gate", 1),
         ("P4.4", "Print-faithful PDF", 0),
-        ("P5.1", "Review workspace (static page v0)", 1), ("P5.2", "Statute panel", 1), ("P5.3", "Audit & versioning", 0),
+        ("P5.1", "Review workspace (page v0: text, mic, upload)", 1), ("P5.2", "Statute panel", 1), ("P5.3", "Audit & versioning (append-only draft log v0)", 1),
         ("P6.1", "End-to-end LangGraph orchestration", 2), ("P6.2", "Fine-tuning pass", 0), ("P6.3", "Human gold set", 0),
         ("P6.4", "Full evaluation study (harness exists)", 1), ("P6.5", "Write-up & demo", 1),
     ]
@@ -227,7 +227,7 @@ def fig_pipeline_status() -> None:
         ("ta → en", ["opus-mt (interim)", "classifier-only view", "chrF 35.2", "IndicTrans2: gated"], AMBER),
         ("C  Statute-ID", ["TF-IDF F1 .700/.581", "IPC→BNS high-conf", "gazette Schedule 438", "29-section cue scan"], GREEN),
         ("D  IF-1 record", ["Pydantic = Schema", "deterministic fill", "grounded narrative", "fixed 15-item form"], GREEN),
-        ("E  Verification", ["FastAPI, local only", "officer page v0", "statute lookup", "cannot mark verified"], AMBER),
+        ("E  Verification", ["FastAPI, local only", "page: text · mic · upload", "lookup · audit log", "cannot mark verified"], AMBER),
     ]
     fig, ax = plt.subplots(figsize=(11, 3.3))
     ax.axis("off")

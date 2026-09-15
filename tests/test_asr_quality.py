@@ -189,3 +189,12 @@ def test_decoder_makes_one_pass_at_temperature_zero_by_default():
     assert WhisperAsr(temperature=[0.0, 0.2, 0.4]).temperature == [0.0, 0.2, 0.4]
     assert WhisperAsr().batch_size == 8            # batched VAD-chunk decoding (finding 6f)
     assert WhisperAsr(batch_size=0).batch_size == 0
+
+
+def test_replay_loop_brakes_are_configurable_and_off_unless_measured():
+    from fir.asr.whisper import WhisperAsr
+
+    a = WhisperAsr()
+    assert a.repetition_penalty >= 1.0 and a.no_repeat_ngram_size >= 0     # whatever the sweep chose
+    b = WhisperAsr(repetition_penalty=1.2, no_repeat_ngram_size=5, model_name="x/y")
+    assert (b.repetition_penalty, b.no_repeat_ngram_size, b.model_name) == (1.2, 5, "x/y")

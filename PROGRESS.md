@@ -18,7 +18,7 @@ Learned extraction (Stage B proper), the LLM narrative, and the officer UI (Stag
 
 ## Done this session (2026-09-13) — solo build, ASR fix + Stage D backbone
 
-**368 tests pass** (`make test`, ~20s, no weights), **ruff clean** (`make lint`; E/F/W/I, E501 ignored). ~7,700 lines added across 28 new modules. Everything
+**376 tests pass** (`make test`, ~20s, no weights), **ruff clean** (`make lint`; E/F/W/I, E501 ignored). ~7,700 lines added across 28 new modules. Everything
 below is wired into the LangGraph graph and exercised by `make report`; the verification page was
 browser-checked against the real server at the end of the session (elements, statute text, cue
 hits, translation row all rendering).
@@ -194,6 +194,21 @@ hits, translation row all rendering).
   "phone") did not match the "போன்" cue — match stems, not citation forms, for Tamil nouns.
 - The battery pins both directions: sections that *must* fire on each complaint and the tempting wrong
   ones that must not (road death → 304A not 302; stalking → 509 not 354/376).
+
+### Stage E: the demo is speech-driven, and every draft is logged (2026-09-15, day before Review 3)
+- `index.html` **Speak it** row: ● Record (MediaRecorder, webm/opus in Chrome/Edge, mp4 in Safari,
+  120 s cap) or an audio file → `POST /v1/complaint/audio`; the transcript lands in the textarea and the
+  same decision renders; ASR guard flags shown inline. Demo-mode URLs unchanged.
+- `app.py`: the audio handler is a plain `def` (Starlette thread pool, so `/v1/health` answers during a
+  decode); one `threading.Lock` around `graph.invoke` (one GPU job at a time); suffix from the file name
+  or the MIME type (`audio/webm;codecs=opus` → `.webm`, so PyAV picks the demuxer), 415 otherwise; 25 MB
+  cap → 413; empty → 400. `FIR_PREWARM=1` loads TF-IDF + translator + Whisper in a background thread at
+  startup and `/v1/health` reports `asr_loaded` from the resident model (`fir-api-demo` launch config).
+- `tests/test_audio_decode.py` proves the browser format decodes without ffmpeg: PyAV 13.1 encodes a 1 s
+  440 Hz tone with libopus into webm, `faster_whisper.audio.decode_audio` returns 16 kHz floats.
+- `src/fir/serving/audit.py` (milestone P5.3 v0): append-only JSONL of every draft — record id, route,
+  sections, flag counts, elapsed, **sha-256 of the narrative, never the text or the audio**; path from
+  `FIR_AUDIT_LOG` (empty string disables; tests point it at a temp file); `/v1/health` → `audit_entries`.
 
 ### Graph
 `(audio→asr) → extract → statute_id → ipc_bns → cognizability → instantiate → END`. New state:
@@ -587,6 +602,29 @@ fallback passes is *not* supported for the replay case (the Cyrillic drift did n
 not evidence). The guard stays; next lever is `no_repeat_ngram_size` / repetition penalty in decoding.
 The earlier compute-type sweep (int8 best, float16 worse) was run under the ladder and is superseded.
 
+### 6g. Decoder brakes clear the replay loop only by making every other clip worse — negative result, guard stays
+Sweep on the 60 clips (T=0, batched, 2026-09-15; `asr_baseline_rp11.json`, `asr_baseline_rp12.json`;
+`no_repeat_ngram_size=5` screened on 6 clips only, `asr_baseline_screen_nr5.json`):
+
+| setting | WER | CER | median clip WER | flagged | clip 1916 | clip 1721 |
+|---|---:|---:|---:|---:|---:|---:|
+| default (rp 1.0, nr 0) | **51.41%** | 15.05% | 45.5% | 2 | 178% ⚑ | 142% ⚑ |
+| repetition_penalty 1.1 | 53.81% | 14.71% | 50.0% | 1 | 139% ⚑ | 50% |
+| repetition_penalty 1.2 | 57.66% | 14.76% | 57.9% | **0** | 100% | 42% |
+| no_repeat_ngram 5 (6-clip screen) | — | — | — | 1916 still loops | 183% ⚑ | 67% |
+
+A penalty of 1.2 clears both loop clips but lifts the *median* clip from 45% to 58% WER: it punishes the
+legitimate repetition Tamil has (case suffixes, reduplication) on every clip to fix two. `no_repeat_ngram`
+does the same and does not even clear 1916. The corpus CER barely moves either way. **Decision: keep
+`repetition_penalty 1.0`, `no_repeat_ngram_size 0`; the transcript guard remains the defence** and the
+two clips stay flagged for the officer. The right fix is model-side (a Tamil-fine-tuned Whisper /
+IndicWhisper, or a code-switch fine-tune), not decoder-side. The knobs stay in `WhisperAsr` and
+`pipeline.yaml` so the experiment is repeatable (`run_asr_baseline --repetition-penalty --no-repeat-ngram-size --files`).
+
+Operational note from the same evening: the machine hard-reset twice under sustained GPU decoding
+(Kernel-Power 41, no bugcheck) — once as a WSL VM restart during `rp12`, once the whole PC during `nr5`.
+Short bursts (a 15 s complaint) ran fine before and after; keep review-day GPU use to the demo.
+
 ### 6c. For Tamil, WER > 100% does not mean fabrication — report CER alongside
 Clip 1731 is the cautionary case: the transcript was essentially right and WER called it the second-worst
 in the set. Tamil's agglutination means a single boundary decision changes the word count. **Any Tamil
@@ -700,8 +738,8 @@ to CRLF via Windows-side edits), `scripts/run.sh` stands in for the missing `mak
    when next on mains power, install Ollama and benchmark 14B-Q4-with-offload vs 7B-Q4 on a real
    Tamil complaint→IF-1 prompt. Must be plugged in: laptop GPUs downclock on battery.
 4. **ASR**: decoding fixed (finding 6f: T=0 + batched VAD chunks; WER 51.41% / CER 15.05% / RTF 0.46).
-   **Still open: the replay loop on 2/60 clips** — try `no_repeat_ngram_size` / `repetition_penalty` in
-   `WhisperAsr`, measure on the 60 clips, keep the guard. Then benchmark IndicWhisper / IndicConformer
+   **Replay loop on 2/60 clips: decoder brakes tried and rejected (finding 6g)** — the guard stays; the
+   fix is model-side. Next: benchmark IndicWhisper / IndicConformer
    (~1.5 GB download — ask) against 51.41% / 15.05%. int8 vs float16: same WER without the ladder,
    float16 faster (RTF 0.44 vs 0.57 on 8 clips); int8 kept for VRAM until the LLM co-residence is known.
 5. Finish the mapping table: verify the 29 `needs_review` rows and fill the 4 `VERIFY` rows

@@ -82,6 +82,10 @@ asr:
   # on a 2.5-minute recording RTF 0.31 -> 0.105 and WER 0.81 -> 0.49 at beam 5
   # (finding 6f). 0 = the sequential 30 s sliding window.
   batch_size: 8
+  # Brakes on the decoder replay loop (2/60 FLEURS clips at T=0). 1.0 / 0 = off;
+  # set from the 60-clip sweep (asr_baseline_rp*.json, nr*.json) -- see finding 6g.
+  repetition_penalty: 1.0
+  no_repeat_ngram_size: 0
   split: test
 
 translate:

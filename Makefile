@@ -63,7 +63,7 @@ extract-eval:
 results:
 	$(PY) -m harness.summarize
 
-serve:
+serve:  # FIR_PREWARM=1 make serve loads the ASR model at startup (demo)
 	cd src && $(PY) -m uvicorn fir.serving.app:app --host 127.0.0.1 --port 8000
 
 clean:

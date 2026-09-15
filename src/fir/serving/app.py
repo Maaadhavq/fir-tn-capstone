@@ -21,8 +21,9 @@ endpoints while telling you plainly what is missing.
 from __future__ import annotations
 
 import functools
-import shutil
+import os
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,18 @@ app = FastAPI(
 
 _STARTED = time.time()
 _STATIC = Path(__file__).resolve().parent / "static"
+
+#: one complaint decodes at a time: the GPU holds one Whisper and the demo is
+#: single-user; a second request waits instead of competing for VRAM
+_GRAPH_LOCK = threading.Lock()
+#: audio uploads: 25 MB is ~25 minutes of webm/opus, far past any complaint
+MAX_AUDIO_BYTES = 25 * 1024 * 1024
+_AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".mp4", ".webm", ".ogg", ".opus", ".flac"}
+_AUDIO_MIME_SUFFIX = {
+    "audio/webm": ".webm", "video/webm": ".webm", "audio/mp4": ".m4a", "audio/x-m4a": ".m4a",
+    "audio/ogg": ".ogg", "audio/opus": ".opus", "audio/wav": ".wav", "audio/x-wav": ".wav",
+    "audio/wave": ".wav", "audio/mpeg": ".mp3", "audio/flac": ".flac", "audio/x-flac": ".flac",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -102,8 +115,30 @@ class _Pipeline:
             self.asr_loaded = True
         return self.graph
 
+    def prewarm(self) -> None:
+        """Load the classifier, translator and the Whisper weights now, so the
+        first spoken complaint of a demo does not pay ~15 s of model loading
+        inside the request. Errors are kept, not raised: health reports them."""
+        try:
+            self.ensure(need_asr=True)
+            self._asr_backend().load()
+        except Exception as exc:  # noqa: BLE001 -- surfaced via /v1/health
+            self.error = f"prewarm: {type(exc).__name__}: {exc}"
+
+    @property
+    def asr_model_resident(self) -> bool:
+        return bool(self._asr is not None and getattr(self._asr, "_model", None) is not None)
+
 
 _pipe = _Pipeline()
+
+
+@app.on_event("startup")
+def _maybe_prewarm() -> None:
+    # FIR_PREWARM=1 loads every model in a background thread at startup (demo
+    # mode); off by default so tests and `GET /v1/health` stay instant.
+    if os.environ.get("FIR_PREWARM") == "1":
+        threading.Thread(target=_pipe.prewarm, name="fir-prewarm", daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -138,13 +173,14 @@ def _run(graph, payload: dict, annotate: bool) -> DraftResponse:
     from fir.orchestrator.graph import to_decision
 
     t0 = time.perf_counter()
-    state = graph.invoke({**payload, "errors": []})
+    with _GRAPH_LOCK:
+        state = graph.invoke({**payload, "errors": []})
     if state.get("errors") and not state.get("fir_record"):
         raise HTTPException(status_code=500, detail="; ".join(state["errors"]))
 
     record = FirRecord.model_validate(state["fir_record"])
     assert record.status != "verified"  # belt and braces: the server never verifies
-    return DraftResponse(
+    response = DraftResponse(
         decision=to_decision(state),
         record=record,
         if1_text=render_if1(record, annotate=annotate) if annotate else state["if1_text"],
@@ -155,6 +191,10 @@ def _run(graph, payload: dict, annotate: bool) -> DraftResponse:
         fill_report=state.get("fill_report") or {},
         elapsed_ms=int((time.perf_counter() - t0) * 1000),
     )
+    from fir.serving import audit
+
+    audit.append(audit.entry_for(response))     # append-only, hashes not text (P5.3 v0)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +211,10 @@ def health() -> dict[str, Any]:
         "uptime_s": int(time.time() - _STARTED),
         "pipeline_built": _pipe.graph is not None,
         "classifier": _pipe.classifier_name,
-        "asr_loaded": _pipe.asr_loaded,
+        "asr_loaded": _pipe.asr_model_resident,
+        "prewarm": os.environ.get("FIR_PREWARM") == "1",
+        "error": _pipe.error,
+        "audit_entries": __import__("fir.serving.audit", fromlist=["count"]).count(),
         "artifacts": {"tfidf_statute": tfidf, "inlegalbert_statute": bert},
         "classifier_choice": _pipe.classifier_choice,
         "translator": getattr(_pipe.translator, "model_id", None),
@@ -265,16 +308,43 @@ def complaint_text(body: TextComplaint) -> DraftResponse:
     return _run(graph, {"narrative": body.narrative}, body.annotate)
 
 
+def _audio_suffix(filename: str | None, content_type: str | None) -> str:
+    """The extension PyAV needs to pick a demuxer: from the name, else the MIME type."""
+    suffix = Path(filename or "").suffix.lower()
+    if suffix in _AUDIO_SUFFIXES:
+        return suffix
+    mime = (content_type or "").split(";")[0].strip().lower()
+    if mime in _AUDIO_MIME_SUFFIX:
+        return _AUDIO_MIME_SUFFIX[mime]
+    raise HTTPException(
+        status_code=415,
+        detail=f"unsupported audio ({filename or 'no name'}, {content_type or 'no type'}); "
+               f"send one of {', '.join(sorted(_AUDIO_SUFFIXES))}",
+    )
+
+
 @app.post("/v1/complaint/audio", response_model=DraftResponse)
-async def complaint_audio(
-    file: UploadFile = File(..., description="wav/mp3/m4a, Tamil or Tamil-English"),
+def complaint_audio(
+    file: UploadFile = File(..., description="wav/mp3/m4a/webm/ogg, Tamil or Tamil-English; "
+                                             "a browser MediaRecorder blob is fine"),
     annotate: bool = False,
 ) -> DraftResponse:
+    """Spoken complaint -> draft. A plain `def`, so Starlette runs it in its
+    thread pool and `/v1/health` keeps answering while Whisper decodes."""
     graph = _pipe.ensure(need_asr=True)
-    suffix = Path(file.filename or "clip.wav").suffix or ".wav"
+    suffix = _audio_suffix(file.filename, file.content_type)
+    size = 0
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        shutil.copyfileobj(file.file, tmp)
         tmp_path = Path(tmp.name)
+        while chunk := file.file.read(1024 * 1024):
+            size += len(chunk)
+            if size > MAX_AUDIO_BYTES:
+                tmp_path.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail=f"audio larger than {MAX_AUDIO_BYTES // (1024 * 1024)} MB")
+            tmp.write(chunk)
+    if size == 0:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="empty audio upload")
     try:
         return _run(graph, {"audio_path": str(tmp_path)}, annotate)
     finally:

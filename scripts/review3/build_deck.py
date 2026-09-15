@@ -68,6 +68,17 @@ def numbers() -> dict:
     n["asr_new"] = asr_new if "temperature" in asr_new else None
     n["asr_old"] = asr_old
     n["asr_seq"] = _load("asr_baseline_seq.json")
+    # finding 6g: decoder brakes on the replay loop -- every sweep file with the two guard clips
+    sweep = []
+    for p in sorted(REPORTS.glob("asr_baseline_rp*.json")) + sorted(REPORTS.glob("asr_baseline_nr*.json")):
+        r = _load(p.name)
+        if not r:
+            continue
+        clip = {c["id"]: c for c in r.get("per_clip", []) if c["file"] in ("12583250098003224463.wav", "16989398024822917306.wav")}
+        sweep.append({"tag": p.stem.replace("asr_baseline_", ""), "rp": r.get("repetition_penalty"), "nr": r.get("no_repeat_ngram_size"),
+                      "wer": r["wer"], "cer": r["cer"], "rtf": r["rtf"], "flagged": r.get("n_flagged", 0),
+                      "c1916": clip.get("1916", {}).get("wer"), "c1721": clip.get("1721", {}).get("wer")})
+    n["sweep"] = sweep
     prof = _load("asr_profile.json") or {}
     n["prof"] = prof
     tr = _load("translation_eval.json") or {}
@@ -371,17 +382,31 @@ def build() -> None:
         "Narrative composer: one sentence per grounded fact, Tamil + English, faithfulness gate = every sentence supported (structural v0; NLI/LLM judge later)",
         "Renderer: the 15-item form, machine-filled slots annotated ⟨status · confidence · source⟩, items 13–15 always blank (they are the officer's)",
         ("Stage E", {"bold": True, "color": NAVY, "bullet": ""}),
-        "FastAPI on 127.0.0.1: /v1/complaint/{text,audio}, /v1/statute/{section}, /v1/health; a static officer page: route, sections with BNS text and element checks, “also consider”, flags, annotated form; “Mark verified” disabled by design",
-    ], size=11.5)
-    d.panel(s, Inches(6.6), Inches(1.6), Inches(5.35), Inches(4.0), "Live demo (5 min)")
+        "FastAPI on 127.0.0.1: /v1/complaint/{text,audio}, /v1/statute/{section}, /v1/health; the officer page records from the microphone or takes an audio file, or typed text: route, sections with BNS text and element checks, “also consider”, flags, annotated form; “Mark verified” disabled by design",
+        "Audit log v0 (P5.3): every draft appended to an immutable JSONL — record id, route, sections, flags, a hash of the text; never the text or the audio",
+    ], size=11)
+    d.panel(s, Inches(6.6), Inches(1.6), Inches(5.35), Inches(4.0), "Live demo (6 min)")
     d.text(s, Inches(6.8), Inches(2.05), Inches(4.95), Inches(4.2), [
-        "1  Typed theft complaint with a value → FIR route, BNS 303(2) with the ₹5,000 proviso shown",
-        "2  Same complaint without the value → officer review: “cognizability depends on property value”",
-        "3  Tamil dowry-cruelty complaint → translation loses “dowry”; the cue scan still raises IPC 498A",
-        "4  Look up BNS 85 → gazette text + the Schedule's condition",
-        "5  Spoken Tamil clip → transcript with ITN, guards, then the same path",
+        "1  Typed theft complaint with a value → officer review with BNS 303(2) cognizable (₹15,000 > ₹5,000)",
+        "2  Same complaint without the value → “cognizability depends on property value”; nothing defaults",
+        "3  Dowry-cruelty complaint → FIR via BNS 80; BNS 85 conditional; element checks with quoted words",
+        "4  ● Record a Tamil complaint into the microphone → transcript, ITN (₹50,000), the same decision — speech-driven, all local",
+        "5  Upload FLEURS clip 1916 → the transcript guard fires; the draft is marked not auto-resolvable",
+        "6  Look up BNS 85 → gazette text + the Schedule's condition",
         ("Fallback if the GPU is busy: `python -m fir draft --json` on the CLI, same output", {"color": MUTED}),
-    ], size=11.5)
+    ], size=11)
+
+    # 11b -- the officer page, if a screenshot exists (scripts/review3 headless Edge capture)
+    shot = ASSETS / "r3_ui_dowry.png"
+    if shot.exists():
+        s = d.slide("The officer page — what the demo shows", "Static page driving the same API the CLI uses; a React workspace replaces it in semester 2 without changing the contract.")
+        d.picture(s, shot, Inches(0.6), Inches(1.5), width=Inches(7.2))
+        d.text(s, Inches(8.0), Inches(1.6), Inches(3.9), Inches(4.8), [
+            "Route badge with the Schedule's rationale; every suggested section with its BNS gazette text, the IPC lineage text, and element checks (✓ quoted words / ? what to establish)",
+            "“Also consider”: sections whose ingredients are in the original text but the classifier did not predict — a question, never applied",
+            "Speak it: microphone or file → the transcript lands in the box and the same decision renders; ASR guard flags shown",
+            "“Mark verified” is disabled by design: verification is the officer's act in CCTNS",
+        ], size=11.5)
 
     # 12 -- interim results table
     s = d.slide("Interim results at a glance", "All numbers are read from artifacts/reports/*.json by the build script; RESULTS.md is regenerated by `make results`.")
@@ -412,7 +437,17 @@ def build() -> None:
             ["Translation lost “dowry” → CSR route (5c)", "reproduced on the real server", "bilingual cue scan on the original; forces officer review"],
             ["Cognizability stub wrong on 4/48 (9)", "gazette parse vs stub: 126, 223, 296, 329", "parse the First Schedule with page citations; conditional class; value-resolved theft split"],
             ["Classifier abstains on short complaints (5)", "top-5 for a theft sample has no 379", "not a threshold problem — in-domain synthetic data; cue scan carries short inputs"]]
-    d.table(s, LM, Inches(1.6), CW, rows, col_widths=[Inches(3.3), Inches(3.3), Inches(4.2)], size=10.5, row_h=Inches(0.5))
+    if n["sweep"]:
+        base = n["asr_new"] or {}
+        cleared = [r for r in n["sweep"] if r["flagged"] == 0]
+        best = min(cleared, key=lambda r: r["wer"]) if cleared else min(n["sweep"], key=lambda r: (r["flagged"], r["wer"]))
+        verdict = (f"rp {best['rp']}, nr {best['nr']}: 0 flagged, WER {pct(best['wer'])} vs {pct(base.get('wer'))}"
+                   if cleared else
+                   f"no setting clears both clips without cost (best: rp {best['rp']}, nr {best['nr']} → {best['flagged']} flagged, WER {pct(best['wer'])}); guard stays, defaults kept")
+        rows.append(["Replay loop survives T=0 on 2/60 clips (6g)",
+                     f"sweep of {len(n['sweep'])} decoder settings on the 60 clips, day before review",
+                     verdict])
+    d.table(s, LM, Inches(1.6), CW, rows, col_widths=[Inches(3.3), Inches(3.3), Inches(4.2)], size=10, row_h=Inches(0.46))
 
     # 14 -- accuracy & practices
     s = d.slide("Technical accuracy and engineering practice", "What a reviewer can check without trusting us.")

@@ -1,5 +1,8 @@
 # Speech-Driven FIR Drafting System (TN IF-1)
 
+> **Presenting or writing about this project? Read [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) first** — every
+> number, caveat, finding and figure, for people and for LLMs. `PROGRESS.md` is the dated engineering log.
+
 Turns a spoken Tamil / Tamil-English citizen complaint into a **draft** First
 Information Report in the Tamil Nadu Police CCTNS IF-1 format.
 
@@ -36,7 +39,7 @@ What runs today, as one LangGraph graph:
 | **B** extraction | rule-based floor with provenance: dates (incl. spoken, year-less), times, INR amounts, phones, plates; digit and spoken forms alike; fills a slot only when unambiguous; 63/63 on the 28-doc gold smoke set, zero FP | NER (MuRIL), LLM structured extraction, synthetic training data |
 | **C** statute-ID | TF-IDF + OvR logistic and InLegalBERT head on ILSI (66k docs, 100 IPC sections); IPC→BNS map with high-confidence-only auto-apply; cognizability routing from the parsed BNSS First Schedule (438 keys, gazette-cited, conditional entries ask the officer); BNS 2023 section text (gazette-parsed, 358 sections) shown on every suggestion with the IPC text as lineage, plus retrieval-rank corroboration; **element-wise justification v0** (29 station-house sections, EN+TA cues, yes-with-provenance or unclear, never no; doubles as the cue-scan recall net) | LLM element verifier, RAG over BNS text, legal read-through of the Schedule CSV |
 | **D** instantiation | Pydantic IF-1 record in parity with the canonical schema; deterministic 15-item form renderer; template narrative composer whose sentences are grounded by construction | LLM narrative |
-| **E** officer UI | FastAPI surface returning decision + record + rendered form | React verification screen |
+| **E** officer UI | FastAPI surface returning decision + record + rendered form; officer page v0 with microphone / audio upload, statute lookup, demo-mode URLs; append-only audit log of every draft | React verification screen, accept/override per section |
 
 Numbers so far (see `PROGRESS.md` for the honest caveats), all on the same 13,039 ILSI test docs
 after training on all 42,835:
@@ -64,7 +67,7 @@ Windows host, and the HF training stack depends on it. See `environment/README.m
 ```bash
 bash environment/setup_wsl.sh   # Python 3.11 via uv, torch cu128, deps
 make data                       # ILSI (512 MB) + FLEURS-ta test (407 MB)
-make test                       # 368 tests, ~20s, no weights needed
+make test                       # 376 tests, ~20s, no weights needed
 make lint                       # ruff
 make schedule                   # rebuild the BNSS First Schedule CSV from the gazette PDF
 make bns-text                   # rebuild the 358 BNS section texts from the gazette PDF

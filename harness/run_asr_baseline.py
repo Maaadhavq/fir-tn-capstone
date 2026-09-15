@@ -38,19 +38,27 @@ def main() -> int:
     ap.add_argument("--tag", default="", help="suffix for the report file name")
     ap.add_argument("--batch-size", type=int, default=None,
                     help="0 = sequential sliding window; >0 = BatchedInferencePipeline (config default)")
+    ap.add_argument("--model", default=None, help="HF id or local CTranslate2 model dir (config default)")
+    ap.add_argument("--repetition-penalty", type=float, default=None, help="CTranslate2 repetition penalty (1.0 = off)")
+    ap.add_argument("--no-repeat-ngram-size", type=int, default=None, help="forbid repeated token n-grams (0 = off)")
+    ap.add_argument("--files", default="", help="comma-separated wav names: run only these clips (a screen, not a baseline)")
     args = ap.parse_args()
 
     print(f"==> loading FLEURS ta_in/{args.split}")
-    clips = load_fleurs(args.split, limit=args.n)
+    clips = load_fleurs(args.split, limit=None if args.files else args.n)
+    if args.files:
+        want = set(args.files.split(","))
+        clips = [c for c in clips if c.audio_path.name in want]
     if not clips:
         print("no clips found. Run: python scripts/download_fleurs.py", file=sys.stderr)
         return 1
     audio_seconds = sum(c.duration_seconds for c in clips)
     print(f"    {len(clips)} clips, {audio_seconds:.1f}s of audio")
 
-    asr = WhisperAsr(device=args.device, compute_type=args.compute_type,
+    asr = WhisperAsr(model_name=args.model, device=args.device, compute_type=args.compute_type,
                      temperature=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0] if args.fallback_ladder else None,
-                     batch_size=args.batch_size)
+                     batch_size=args.batch_size, repetition_penalty=args.repetition_penalty,
+                     no_repeat_ngram_size=args.no_repeat_ngram_size)
     transcripts, elapsed = asr.transcribe_batch([c.audio_path for c in clips])
 
     scores = score_asr(
@@ -130,6 +138,8 @@ def main() -> int:
                 "condition_on_previous_text": asr.condition_on_previous_text,
                 "temperature": asr.temperature,
                 "batch_size": asr.batch_size,
+                "repetition_penalty": asr.repetition_penalty,
+                "no_repeat_ngram_size": asr.no_repeat_ngram_size,
                 "audio_seconds": scores.audio_seconds,
                 "elapsed_seconds": elapsed,
                 "rtf": scores.rtf,

@@ -27,13 +27,23 @@ are there); everything else runs in WSL as usual.
 6. Laptop **on mains power** for the demo (GPU downclocks on battery) and the WSL venv warm:
    run `bash scripts/run.sh test -q` once in the morning.
 
-## Demo (≈5 minutes) — run in this order
+## Pre-flight (morning of the review)
 
-Start the server (takes ~15 s; loads TF-IDF + the translator):
+1. Laptop on **mains power**; close other GPU users.
+2. `wsl -d Ubuntu -e bash -lc "pgrep -fa harness"` → nothing running; `nvidia-smi` → < 1 GB used.
+3. Start the server **with the ASR pre-warmed** (loads TF-IDF, translator and Whisper at startup, ~20 s):
+   ```bash
+   wsl -d Ubuntu -e bash -lc "cd /mnt/c/Users/madha/Downloads/fir-tn-capstone && FIR_PREWARM=1 bash scripts/run.sh serve"
+   ```
+   then `http://127.0.0.1:8000/v1/health` must show `"asr_loaded": true` and `"error": null`.
+4. In Edge, open `http://127.0.0.1:8000/`, click **● Record** once and allow the microphone so the
+   permission prompt does not appear in front of the panel.
+5. Copy one FLEURS clip to the desktop for the upload fallback and for the guard demo:
+   `data/fleurs/ta_in/audio/test/12583250098003224463.wav` (clip 1916, the replay-loop case) and
+   `.../16989398024822917306.wav` (clip 1721).
+6. `bash scripts/run.sh test -q` once (all green) — proves the tree is the one on the slides.
 
-```bash
-wsl -d Ubuntu -e bash -lc "cd /mnt/c/Users/madha/Downloads/fir-tn-capstone && bash scripts/run.sh serve"
-```
+## Demo (≈6 minutes) — run in this order
 
 Open `http://127.0.0.1:8000/`. Demo-mode URLs pre-fill and run a sample on load:
 
@@ -43,15 +53,19 @@ Open `http://127.0.0.1:8000/`. Demo-mode URLs pre-fill and run a sample on load:
 | 2 | edit the text: delete "worth Rs 15,000" → Draft | 379 now **conditional** — "cognizability depends on property value"; nothing defaults |
 | 3 | `/?sample=dowry death&run=1` | route **FIR** via BNS 80; BNS 85 shows *conditional* (who reports); element checks ✓/? with quoted words; BNS gazette text above the IPC lineage text |
 | 4 | `/?sample=spoken Tamil&run=1` | Tamil input → ITN turns "ஐம்பதாயிரம் ரூபாய்" into ₹50,000 and fills the slot; *Classifier read* row shows the opus-mt translation |
-| 5 | Look up a section: type `85` → Look up | gazette heading + text, Schedule entry *conditional* with the Schedule's words, bailable/court |
-| 6 | (if time) `python -m fir draft --json "..."` in WSL | same decision as JSON — the API and CLI share one graph |
+| 5 | **● Record** → speak the complaint in Tamil (e.g. the "spoken Tamil" sample aloud, ~15 s) → **■ Stop** | the page posts the browser recording to `/v1/complaint/audio`; the transcript appears in the box, ITN turns "ஐம்பதாயிரம் ரூபாய்" into ₹50,000, the same decision renders — *speech-driven end to end, all local* |
+| 6 | Upload the FLEURS clip 1916 → **Transcribe & draft** | the transcript guard fires (`repetition_loop`) and the page says the draft cannot be auto-resolved — a fabrication caught, not hidden |
+| 7 | Look up a section: type `85` → Look up | gazette heading + text, Schedule entry *conditional* with the Schedule's words, bailable/court |
+| 8 | (if time) `python -m fir draft --json "..."` in WSL | same decision as JSON — the API and CLI share one graph |
 
-Audio path: `POST /v1/complaint/audio` with a FLEURS clip — `data/fleurs/ta_in/audio/test/*.wav`;
-the transcript carries `asr_flags` when the guard trips. Say the honest number: WER 51% / CER 15%
-zero-shot on read Wikipedia sentences, two of sixty clips flagged for a repetition loop.
+Say the honest number: WER 51% / CER 15% zero-shot on read Wikipedia sentences (before this week: 57% / 22%,
+four times slower), two of sixty clips flagged for a repetition loop — see the sweep result on slide 13.
+Every draft is appended to `artifacts/audit/drafts.jsonl` (record id, route, sections, hash of the text —
+never the text or the audio); `/v1/health` shows `audit_entries`.
 
 ## Fallbacks
 
+- Microphone refused or no sound card → upload the FLEURS clip (step 6) or the text samples.
 - GPU busy or server fails to load → CLI: `bash scripts/run.sh` is not needed; from WSL:
   `cd src && HF_HUB_OFFLINE=1 python -m fir draft "On 8.5.2026 an unknown man stole my mobile phone worth Rs 15,000 from my shop."`
 - Nothing runs → the PDF deck has the same outputs on slides 10–12, and `artifacts/reports/RESULTS.md`
