@@ -1,0 +1,106 @@
+# ---------------------------------------------------------------------------
+# Dataset registry.  Verified live 2026-08-17 (see DATASETS.md).
+#
+# `root` paths are relative to the repo root. Raw data is NOT committed to git
+# (see .gitignore); these entries tell the loaders where things land and let
+# `python -m harness.check_data` report what is present vs missing.
+# ---------------------------------------------------------------------------
+
+ilsi:
+  role: statute-identification (multi-label, IPC-era)
+  source: zenodo
+  record: "6053791"
+  doi: 10.5281/zenodo.6053791
+  license: research use
+  root: data/ilsi
+  fetch: scripts/download_ilsi.sh
+  files:
+    train: train.jsonl        # 319.8 MB
+    dev: dev.jsonl            #  85.3 MB
+    test: test.jsonl          # 106.1 MB
+    statutes: secs.jsonl      # statute text, one per IPC section
+    label_vocab: label_vocab.json
+    type_map: type_map.json
+  # line format: {"id": str, "text": [sentence, ...], "labels": ["Section 302 in The Indian Penal Code", ...]}
+  n_labels: 100
+  notes: >
+    English court fact-statements, IPC-labelled. Domain shift vs Tamil spoken
+    complaints is risk R10 -- mitigated later with in-domain synthetic + human gold.
+    IPC labels are converted to BNS 2023 via the ipc_bns_map entry below.
+
+fleurs_ta:
+  role: ASR eval
+  source: hf
+  repo: google/fleurs
+  config: ta_in
+  license: CC-BY-4.0
+  root: data/fleurs
+  fetch: scripts/download_fleurs.py
+  files:
+    test_audio: data/ta_in/audio/test.tar.gz   # 406.6 MB
+    test_tsv: data/ta_in/test.tsv              #   0.8 MB
+    dev_audio: data/ta_in/audio/dev.tar.gz     # 238.9 MB (optional)
+    dev_tsv: data/ta_in/dev.tsv
+  # tsv columns (headerless): id, file_name, raw_transcription, transcription,
+  #                           num_samples, speaker_id, gender
+  notes: 3,335 clips total / ~2.76 GB. We fetch the test split only for the slice.
+
+kathbath_ta:
+  role: ASR train (later)
+  source: hf
+  repo: ai4bharat/Kathbath
+  filter: tamil
+  license: CC0 / CC-BY-4.0
+  root: data/kathbath
+  status: not-fetched
+
+inlegalner:
+  role: legal NER seed (later)
+  source: git
+  url: https://github.com/Legal-NLP-EkStep/legal_NER
+  license: MIT
+  root: data/opennyai_ner
+  status: not-fetched
+  notes: 46,545 entities / 14 types. Ships as raw spaCy JSON -- download files directly.
+
+statutes:
+  role: statute text for RAG / element verification (later)
+  source: local
+  root: data/statutes
+  files:
+    bns: bns_2023.jsonl              # BUILT 2026-09-13: 358 sections, scripts/build_bns_text.py
+    bnss: bnss_2023.jsonl            # not built (procedure; nothing in the pipeline needs it yet)
+    schedule1: bnss_schedule1.csv    # drives cognizability -- BUILT 2026-09-13
+    schedule1_rows: bnss_schedule1_rows.csv   # verbatim Schedule rows for the reviewer
+    gazette_pdf: mha_250884_english.pdf       # source: Gazette Ext. No. 55, 25-12-2023 (MHA copy)
+  status: partial
+  notes: >
+    bnss_schedule1.csv (438 section keys, 461 Schedule rows, Part I pp. 158-188
+    of the gazette) is parsed by scripts/build_bnss_schedule.py and replaces the
+    stub in src/fir/statute/cognizability.py. Parsed, not legally signed off:
+    every row cites its gazette page for the reviewer. 26 entries are
+    `conditional` (abetment/attempt follow the main offence; s.85 depends on
+    who reports; s.303(2) theft splits at Rs 5,000). bns_2023.jsonl carries
+    every BNS section's heading, text and illustration-free operative text
+    from the BNS gazette (mha_250883_english.pdf); fir.statute.bns_text reads
+    it so suggestions show the BNS words. BNSS section text is not parsed.
+
+ipc_bns_map:
+  role: IPC 1860 -> BNS 2023 section conversion
+  source: local
+  root: data/mapping
+  files:
+    map: ipc_bns_map.csv
+    ilsi_labels: ilsi_ipc_labels.json
+    source_pdf: BNS-IPC_pocket_directory.pdf
+  status: partial
+  # columns: ipc_section, offence, bns_section, confidence(high|med|low), needs_review(Y|N), notes
+  auto_apply_rule: "confidence == high AND needs_review == N"
+  coverage:
+    total: 100
+    high: 71
+    med: 16
+    low: 13
+  notes: >
+    Source is a third-party pocket directory, NOT the official gazette. 29 rows
+    are flagged needs_review and MUST NOT be auto-applied. See data/mapping/README.md.

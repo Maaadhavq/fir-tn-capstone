@@ -1,0 +1,73 @@
+# ---------------------------------------------------------------------------
+# Model registry.
+#
+# HARDWARE REALITY CHECK (measured 2026-08-20): the dev box has an RTX 5050
+# Laptop with 8 GB VRAM and 15.6 GB host RAM -- NOT the 16 GB assumed in
+# CONTEXT.md's locked decisions. VRAM figures below are for this 8 GB budget.
+# Anything marked `fits: false` needs a decision (see PROGRESS.md).
+# ---------------------------------------------------------------------------
+
+asr:
+  primary:
+    name: Systran/faster-whisper-large-v3
+    backend: faster-whisper (CTranslate2)
+    compute_type: int8
+    approx_vram_gb: 1.6
+    download_gb: 3.09
+    fits: true
+    language: ta
+  fallback_12gb:
+    name: ai4bharat/indicwhisper
+    status: not-evaluated
+
+statute_id:
+  baseline:
+    name: tfidf+ovr-logistic
+    backend: scikit-learn (CPU)
+    fits: true
+  encoder:
+    name: law-ai/InLegalBERT
+    backend: transformers
+    max_seq_len: 512
+    problem_type: multi_label_classification
+    precision: fp16 (AMP)
+    batch_size: 8
+    approx_vram_gb: 5.0
+    download_gb: 0.53
+    fits: true
+
+# --- NOT YET IN USE -- listed so the 8 GB gap is visible in one place --------
+llm:
+  resident:
+    name: qwen2.5:7b-instruct-q4_K_M
+    serving: ollama
+    approx_vram_gb: 4.7
+    fits: true
+    role: extraction + element verification + narrative composition
+  data_gen:
+    name: qwen2.5:14b-instruct-q4_K_M
+    serving: ollama
+    approx_vram_gb: 9.0   # <-- this IS the 4-bit (Q4_K_M) weight size, not FP16.
+    fits: false           # 7.1 GB usable after the display; ~25% of layers must offload to CPU.
+    role: offline synthetic IF-1 generation
+    decision_required: true
+    # Going lower than 4-bit does not help: Q3_K_M (~7.3 GB) leaves no room for KV cache, and a
+    # 3-bit 14B likely generates worse training pairs than the 4-bit 7B below -- every downstream
+    # stage inherits that quality. See OPEN-QUESTIONS.md Q-15 for the full table and the benchmark
+    # to run when next on mains power (laptop GPUs downclock on battery; DC numbers are invalid).
+    alternatives:
+      - name: qwen2.5:7b-instruct-q4_K_M
+        approx_vram_gb: 4.7
+        fits: true
+        note: fully resident; ~5x faster generation, smaller model
+      - name: qwen2.5:14b-instruct-q4_K_M + partial CPU offload
+        fits: partial
+        note: keeps 14B quality; est. 4-8 tok/s vs 25-40 tok/s for the 7B -- benchmark before committing
+
+ner:
+  name: google/muril-base-cased
+  status: not-evaluated
+
+retriever:
+  name: BAAI/bge-m3
+  status: not-evaluated

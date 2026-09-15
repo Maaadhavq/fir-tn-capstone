@@ -1,0 +1,8 @@
+# Keep LF everywhere: the code runs in WSL, Makefile and shell scripts break on CRLF.
+* text=auto eol=lf
+*.png binary
+*.pptx binary
+*.docx binary
+*.pdf binary
+*.wav binary
+*.flac binary

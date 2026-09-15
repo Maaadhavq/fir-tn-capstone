@@ -1,0 +1,492 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tn-fir.local/schemas/if1/v1.json",
+  "title": "TN FIR (CCTNS IF-1)",
+  "type": "object",
+  "$defs": {
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "utterance_id": {
+          "type": "string"
+        },
+        "transcript_char_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transcript_char_end": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "audio_start_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "audio_end_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "transcript_char_start",
+        "transcript_char_end"
+      ]
+    },
+    "bilingual": {
+      "type": "object",
+      "properties": {
+        "ta": {
+          "type": "string",
+          "description": "Tamil, verbatim where sourced from speech"
+        },
+        "en": {
+          "type": "string"
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "description": "Generic extracted field wrapper.",
+      "properties": {
+        "value": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/bilingual"
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance"
+          }
+        },
+        "status": {
+          "enum": [
+            "extracted",
+            "elicited",
+            "officer_edited",
+            "officer_added",
+            "empty"
+          ]
+        },
+        "officer_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "status"
+      ]
+    },
+    "person": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/field"
+        },
+        "relative_type": {
+          "enum": [
+            "father",
+            "husband",
+            "mother",
+            "spouse",
+            "guardian",
+            null
+          ]
+        },
+        "relative_name": {
+          "$ref": "#/$defs/field"
+        },
+        "dob_or_age": {
+          "$ref": "#/$defs/field"
+        },
+        "nationality": {
+          "$ref": "#/$defs/field"
+        },
+        "occupation": {
+          "$ref": "#/$defs/field"
+        },
+        "contact": {
+          "$ref": "#/$defs/field"
+        },
+        "address": {
+          "$ref": "#/$defs/field"
+        },
+        "passport": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "$ref": "#/$defs/field"
+            },
+            "date_place_of_issue": {
+              "$ref": "#/$defs/field"
+            }
+          }
+        }
+      }
+    },
+    "accused": {
+      "type": "object",
+      "properties": {
+        "known": {
+          "type": "boolean"
+        },
+        "unknown": {
+          "type": "boolean"
+        },
+        "name": {
+          "$ref": "#/$defs/field"
+        },
+        "alias": {
+          "$ref": "#/$defs/field"
+        },
+        "relative_name": {
+          "$ref": "#/$defs/field"
+        },
+        "physical_description": {
+          "$ref": "#/$defs/field"
+        },
+        "address": {
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "property_item": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/field"
+        },
+        "description": {
+          "$ref": "#/$defs/field"
+        },
+        "estimated_value_inr": {
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "section_candidate": {
+      "type": "object",
+      "properties": {
+        "act": {
+          "enum": [
+            "BNS_2023",
+            "BNSS_2023",
+            "MV_Act",
+            "IT_Act_2000",
+            "TN_PHW_Act",
+            "OTHER"
+          ]
+        },
+        "section": {
+          "type": "string"
+        },
+        "description_en": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "cognizable": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "elements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "element": {
+                "type": "string"
+              },
+              "satisfied": {
+                "enum": [
+                  "yes",
+                  "no",
+                  "unclear"
+                ]
+              },
+              "justification": {
+                "type": "string"
+              },
+              "supporting_provenance": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/provenance"
+                }
+              }
+            },
+            "required": [
+              "element",
+              "satisfied"
+            ]
+          }
+        },
+        "ipc_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Original IPC section if mapped"
+        },
+        "mapping_ambiguous": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "act",
+        "section",
+        "score"
+      ]
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "if1/v1"
+    },
+    "record_id": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "under_review",
+        "verified",
+        "csr_advisory"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "jurisdiction": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "const": "Tamil Nadu"
+        },
+        "district": {
+          "$ref": "#/$defs/field"
+        },
+        "police_station": {
+          "$ref": "#/$defs/field"
+        },
+        "ps_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "fir_number": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fir_year": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "fir_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "acts_sections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/section_candidate"
+      }
+    },
+    "occurrence": {
+      "type": "object",
+      "properties": {
+        "from_datetime": {
+          "$ref": "#/$defs/field"
+        },
+        "to_datetime": {
+          "$ref": "#/$defs/field"
+        },
+        "is_interval": {
+          "type": "boolean"
+        },
+        "info_received_at_ps": {
+          "$ref": "#/$defs/field"
+        },
+        "gd_reference": {
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "information_type": {
+      "enum": [
+        "written",
+        "oral",
+        null
+      ]
+    },
+    "place_of_occurrence": {
+      "type": "object",
+      "properties": {
+        "direction_from_ps": {
+          "$ref": "#/$defs/field"
+        },
+        "distance_from_ps_km": {
+          "$ref": "#/$defs/field"
+        },
+        "beat_no": {
+          "$ref": "#/$defs/field"
+        },
+        "address": {
+          "$ref": "#/$defs/field"
+        },
+        "outside_ps_limits": {
+          "type": "boolean"
+        },
+        "other_ps_name": {
+          "$ref": "#/$defs/field"
+        },
+        "other_district": {
+          "$ref": "#/$defs/field"
+        }
+      }
+    },
+    "complainant": {
+      "$ref": "#/$defs/person"
+    },
+    "accused": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/accused"
+      }
+    },
+    "delay_reason": {
+      "$ref": "#/$defs/field"
+    },
+    "properties_involved": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/property_item"
+      }
+    },
+    "total_property_value_inr": {
+      "$ref": "#/$defs/field"
+    },
+    "inquest_ud_case_no": {
+      "$ref": "#/$defs/field"
+    },
+    "witnesses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/person"
+      }
+    },
+    "narrative": {
+      "type": "object",
+      "properties": {
+        "ta": {
+          "type": "string"
+        },
+        "en": {
+          "type": "string"
+        },
+        "grounding": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sentence_id": {
+                "type": "string"
+              },
+              "supported": {
+                "type": "boolean"
+              },
+              "supporting_provenance": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/provenance"
+                }
+              }
+            },
+            "required": [
+              "sentence_id",
+              "supported"
+            ]
+          }
+        }
+      }
+    },
+    "cognizability": {
+      "type": "object",
+      "properties": {
+        "decision": {
+          "enum": [
+            "cognizable",
+            "non_cognizable",
+            "mixed",
+            "undetermined"
+          ]
+        },
+        "route": {
+          "enum": [
+            "FIR",
+            "CSR_advisory",
+            "officer_review"
+          ]
+        },
+        "schedule_ref": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "route"
+      ]
+    },
+    "audit_ref": {
+      "type": "string",
+      "description": "Pointer to immutable audit log"
+    },
+    "document_version": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "record_id",
+    "status",
+    "jurisdiction",
+    "narrative",
+    "cognizability"
+  ]
+}

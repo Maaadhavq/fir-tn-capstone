@@ -1,0 +1,50 @@
+# --- data: never committed, DVC-tracked later (IMPLEMENTATION.md §2) ---------
+data/ilsi/
+data/fleurs/
+data/kathbath/
+data/opennyai_ner/
+data/synthetic/
+# data/mapping/ IS committed -- it is our own hand-built artifact.
+!data/mapping/
+data/statutes/*.jsonl
+data/statutes/*.csv
+# ... except the BNSS First Schedule we parse from the gazette (source PDF kept
+# alongside so the build is reproducible; 2 MB, public government text)
+!data/statutes/bnss_schedule1.csv
+!data/statutes/bnss_schedule1_rows.csv
+!data/statutes/mha_250884_english.pdf
+!data/statutes/bns_2023.jsonl
+!data/statutes/mha_250883_english.pdf
+
+# --- model weights & run outputs --------------------------------------------
+artifacts/models/
+artifacts/reports/*.json
+*.joblib
+*.pt
+*.bin
+!data/mapping/*.pdf
+
+# --- python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+
+# --- editors / os ------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+~$*
+
+# --- generated docs (sources are the build scripts) --------------------------
+scratchpad/
+
+# scratch
+*.bak
+
+# run logs (survive WSL restarts, unlike /tmp)
+artifacts/logs/

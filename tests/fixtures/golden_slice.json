@@ -1,0 +1,154 @@
+{
+  "_comment": [
+    "Golden regression fixture for the vertical slice.",
+    "Each case pins the OUTPUT OF THE PIPELINE POLICY -- which IPC sections get",
+    "auto-converted to BNS, which are held back for a human, and whether the case",
+    "routes to FIR, CSR, or officer review. It does NOT pin model accuracy;",
+    "predictions come from tests/stubs.py:GOLDEN_RULES.",
+    "",
+    "If a change to ipc_bns_map.csv or cognizability.py alters any of these,",
+    "the test fails on purpose: these are legal decisions, not implementation",
+    "details, and every change to them should be deliberate and reviewed."
+  ],
+  "cases": [
+    {
+      "name": "dowry_death_all_high_confidence",
+      "why": "The DATASETS.md worked example. All four sections are high-confidence, so all four convert automatically and the cognizable offences force an FIR.",
+      "narrative": "The victim was harassed for dowry after marriage and later found dead at her matrimonial home.",
+      "expect": {
+        "predicted_ipc": [
+          "302",
+          "304B",
+          "498A",
+          "34"
+        ],
+        "bns_sections": [
+          "BNS 103(1)",
+          "BNS 80",
+          "BNS 85",
+          "BNS 3(5)"
+        ],
+        "review_reasons": {},
+        "route": "FIR"
+      }
+    },
+    {
+      "name": "theft_single_section",
+      "why": "Simplest happy path: one high-confidence section, cognizable, straight to FIR. The value matters: the Schedule makes 303(2) non-cognizable under Rs 5,000.",
+      "narrative": "The accused stole a mobile phone worth Rs 15,000 from the complainant's shop.",
+      "expect": {
+        "predicted_ipc": [
+          "379"
+        ],
+        "bns_sections": [
+          "BNS 303(2)"
+        ],
+        "review_reasons": {},
+        "route": "FIR"
+      }
+    },
+    {
+      "name": "theft_without_value_is_conditional",
+      "why": "BNSS First Schedule splits 303(2) on property value (Rs 5,000). With no value in the complaint the entry is conditional and the officer must ask -- never a default FIR or CSR.",
+      "narrative": "The accused stole a mobile phone from the complainant's shop.",
+      "expect": {
+        "predicted_ipc": [
+          "379"
+        ],
+        "bns_sections": [
+          "BNS 303(2)"
+        ],
+        "review_reasons": {},
+        "route": "OFFICER_REVIEW"
+      }
+    },
+    {
+      "name": "theft_below_5000_is_non_cognizable",
+      "why": "Same section, value under the Schedule's threshold: non-cognizable, so CSR advisory.",
+      "narrative": "The accused stole a purse worth Rs 2,000 from the complainant.",
+      "expect": {
+        "predicted_ipc": [
+          "379"
+        ],
+        "bns_sections": [
+          "BNS 303(2)"
+        ],
+        "review_reasons": {},
+        "route": "CSR"
+      }
+    },
+    {
+      "name": "hurt_and_intimidation_all_non_cognizable",
+      "why": "Exercises the CSR branch: both sections map cleanly but neither is cognizable, so this is a Community Service Register entry, not an FIR.",
+      "narrative": "The neighbour slapped the complainant during an argument and threatened him.",
+      "expect": {
+        "predicted_ipc": [
+          "323",
+          "506"
+        ],
+        "bns_sections": [
+          "BNS 115(2)",
+          "BNS 351(2)"
+        ],
+        "review_reasons": {},
+        "route": "CSR"
+      }
+    },
+    {
+      "name": "defamation_flagged_needs_review",
+      "why": "IPC 500 is confidence=med, needs_review=Y. It must NOT be auto-applied; with nothing left to act on the case goes to the officer.",
+      "narrative": "The accused published defamatory statements about the complainant.",
+      "expect": {
+        "predicted_ipc": [
+          "500"
+        ],
+        "bns_sections": [],
+        "review_reasons": {
+          "500": "flagged_needs_review"
+        },
+        "route": "OFFICER_REVIEW"
+      }
+    },
+    {
+      "name": "corruption_maps_to_other_statute",
+      "why": "IPC 161 is high-confidence but maps to the Prevention of Corruption Act 1988, not the BNS. Auto-applying it would put a non-existent BNS section on an FIR, so it is always routed out.",
+      "narrative": "A public servant demanded a bribe to process the application.",
+      "expect": {
+        "predicted_ipc": [
+          "161"
+        ],
+        "bns_sections": [],
+        "review_reasons": {
+          "161": "maps_to_other_statute"
+        },
+        "route": "OFFICER_REVIEW"
+      }
+    },
+    {
+      "name": "mischief_unprefixed_csv_value_is_repaired",
+      "why": "IPC 427 stores a bare '324(4),(5)' in the CSV. The loader must normalise it to a BNS-prefixed section rather than dropping the row. The Schedule classes 324(4) non-cognizable and 324(5) cognizable, so the composite cannot settle the route.",
+      "narrative": "The accused smashed the windows of the complainant's car.",
+      "expect": {
+        "predicted_ipc": [
+          "427"
+        ],
+        "bns_sections": [
+          "BNS 324(4),(5)"
+        ],
+        "review_reasons": {},
+        "route": "OFFICER_REVIEW"
+      }
+    },
+    {
+      "name": "no_prediction_routes_to_officer",
+      "why": "An unrecognised complaint must never produce an empty FIR. Nothing predicted means the officer decides.",
+      "narrative": "The complainant reported a matter not covered by any rule.",
+      "expect": {
+        "predicted_ipc": [],
+        "bns_sections": [],
+        "review_reasons": {},
+        "route": "OFFICER_REVIEW"
+      }
+    }
+  ]
+}

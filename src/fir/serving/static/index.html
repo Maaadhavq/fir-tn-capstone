@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FIR-TN Verification</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1d232b; --muted: #5b6573; --line: #d9dee5;
+    --accent: #1f3a5f; --ok: #1e7f4f; --warn: #b3541e; --bad: #a1272b; --tag: #eef2f7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 -apple-system, "Segoe UI", Roboto, "Noto Sans Tamil", "Noto Sans", sans-serif; }
+  header { background: var(--accent); color: #fff; padding: 14px 22px; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .2px; }
+  header p  { margin: 4px 0 0; font-size: 13px; opacity: .85; }
+  main { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 18px; padding: 18px 22px; max-width: 1500px; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+  .panel h2 { margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  textarea { width: 100%; min-height: 180px; padding: 10px; border: 1px solid var(--line); border-radius: 6px;
+             font: inherit; resize: vertical; }
+  button { font: inherit; padding: 9px 16px; border-radius: 6px; border: 1px solid var(--accent);
+           background: var(--accent); color: #fff; cursor: pointer; }
+  button.secondary { background: #fff; color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .samples button { font-size: 13px; padding: 5px 10px; }
+  .route { display: inline-block; padding: 3px 10px; border-radius: 999px; font-weight: 600; font-size: 13px; }
+  .route.FIR { background: #e3f3ea; color: var(--ok); }
+  .route.CSR { background: #fff1e6; color: var(--warn); }
+  .route.OFFICER_REVIEW { background: #fbe7e8; color: var(--bad); }
+  .kv { display: grid; grid-template-columns: 150px 1fr; gap: 6px 12px; font-size: 14px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; }
+  ul.flat { margin: 6px 0 0; padding-left: 18px; }
+  .tag { display: inline-block; background: var(--tag); border: 1px solid var(--line); border-radius: 4px;
+         padding: 1px 6px; font-size: 12px; margin: 2px 4px 2px 0; }
+  .tag.warn { background: #fff1e6; border-color: #f0c9a8; color: var(--warn); }
+  .tag.bad  { background: #fbe7e8; border-color: #efb7b9; color: var(--bad); }
+  .tag.ok   { background: #e3f3ea; border-color: #b7dcc6; color: var(--ok); }
+  pre.form { background: #fbfcfd; border: 1px solid var(--line); border-radius: 6px; padding: 14px;
+             overflow-x: auto; font: 13px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; white-space: pre; }
+  pre.form .mark { background: #fff3c4; border-radius: 3px; }
+  .sec { margin-bottom: 10px; }
+  ul.els { list-style: none; margin: 4px 0 0 2px; padding: 0; font-size: 13px; }
+  ul.els li { padding: 1px 0; }
+  ul.els li.yes b { color: var(--ok); }  ul.els li.unclear b { color: var(--warn); }  ul.els li.no b { color: var(--bad); }
+  ul.els li div.muted { margin-left: 18px; font-size: 12px; }
+  .law { font-size: 12.5px; color: var(--muted); border-left: 3px solid var(--line); padding: 4px 8px; margin: 4px 0 0 2px; font-style: italic; }
+  .notice { border-left: 4px solid var(--bad); background: #fbe7e8; padding: 10px 12px; border-radius: 4px;
+            font-size: 13px; margin-top: 12px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .hidden { display: none; }
+  footer { padding: 10px 22px 24px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>FIR-TN — Officer verification (draft)</h1>
+  <p>Decision support. The system drafts; the officer verifies and is the author of record. Nothing here files anything.</p>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Complaint</h2>
+    <textarea id="narrative" placeholder="Paste or type the complaint (Tamil, English, or mixed)…"></textarea>
+    <div class="row">
+      <button id="draft">Draft IF-1</button>
+      <label class="muted"><input type="checkbox" id="annotate" checked> annotate machine-filled slots</label>
+      <span id="status" class="muted"></span>
+    </div>
+    <div class="row samples muted">
+      samples:
+      <button class="secondary" data-s="On 8.5.2026 at around 10:30 pm an unknown man stole my mobile phone worth Rs 15,000 from my shop at T. Nagar. My number is 9876543210.">theft</button>
+      <button class="secondary" data-s="The deceased was married five years ago. After the marriage she was treated with cruelty by her husband and his relatives for demand of dowry, and on 8.5.2010 they committed her murder at the matrimonial home.">dowry death</button>
+      <button class="secondary" data-s="The accused published defamatory statements about the complainant on 1.1.2026.">defamation</button>
+      <button class="secondary" data-s="மே மாதம் எட்டாம் தேதி இரவு பத்து மணிக்கு அடையாளம் தெரியாத ஒருவர் என் கடையில் இருந்து ஐம்பதாயிரம் ரூபாய் மற்றும் என் போன் திருடிச் சென்றார். என் எண் 9876543210.">spoken Tamil</button>
+    </div>
+
+    <div id="decision" class="hidden">
+      <h2 style="margin-top:18px">Decision</h2>
+      <dl class="kv">
+        <dt>Route</dt><dd><span id="route" class="route"></span> <span id="rationale" class="muted"></span></dd>
+        <dt>BNS sections</dt><dd id="sections">—</dd>
+        <dt>Held for review</dt><dd id="review">—</dd>
+        <dt>Also consider</dt><dd id="cues">—</dd>
+        <dt>Slots filled</dt><dd id="filled">—</dd>
+        <dt>Narrative</dt><dd id="grounded">—</dd>
+        <dt>ASR flags</dt><dd id="asrflags">—</dd>
+        <dt>Classifier read</dt><dd id="translated" class="muted">—</dd>
+        <dt>Classifier</dt><dd id="classifier" class="muted">—</dd>
+      </dl>
+      <div class="notice" id="review-notice"></div>
+      <div class="row" style="margin-top:14px">
+        <button id="verify" disabled title="Verification is the officer's act, recorded in CCTNS. This screen cannot perform it.">Mark verified</button>
+        <span class="muted">disabled by design — verification happens in CCTNS, not here</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Look up a section</h2>
+    <div class="row">
+      <input id="lookup-q" placeholder="BNS section, e.g. 303(2)" style="flex:1;min-width:160px;padding:8px;border:1px solid var(--line);border-radius:6px">
+      <button id="lookup" class="secondary">Look up</button>
+    </div>
+    <div id="lookup-out" class="muted" style="margin-top:8px">The gazette text and the First Schedule entry, as reference. Not a decision.</div>
+  </section>
+
+  <section class="panel">
+    <h2>IF-1 draft</h2>
+    <pre class="form" id="form">Draft an IF-1 to see the form here.</pre>
+    <details style="margin-top:10px"><summary class="muted">raw record (JSON)</summary>
+      <pre class="form" id="json"></pre></details>
+  </section>
+</main>
+
+<footer>
+  Local only · <span id="health">checking…</span> · <a href="/docs">API docs</a>
+</footer>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+  document.querySelectorAll('.samples button').forEach(b =>
+    b.addEventListener('click', () => { $('narrative').value = b.dataset.s; }));
+
+  // demo mode: /?sample=theft&run=1 pre-fills a sample (by button label) and drafts it on load;
+  // /?text=...&run=1 does the same with an arbitrary complaint
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('sample')) {
+    const b = [...document.querySelectorAll('.samples button')].find(x => x.textContent.trim() === qs.get('sample'));
+    if (b) $('narrative').value = b.dataset.s;
+  } else if (qs.get('text')) {
+    $('narrative').value = qs.get('text');
+  }
+  if (qs.get('run') === '1' && $('narrative').value.trim()) setTimeout(() => $('draft').click(), 50);
+
+  fetch('/v1/health').then(r => r.json()).then(h => {
+    $('health').textContent = `classifier: ${h.classifier || 'not loaded'} · artifacts: tfidf ${h.artifacts.tfidf_statute ? 'ok' : 'missing'}, bert ${h.artifacts.inlegalbert_statute ? 'ok' : 'missing'}`;
+  }).catch(() => { $('health').textContent = 'server unreachable'; });
+
+  const lookup = async () => {
+    const q = $('lookup-q').value.trim();
+    if (!q) return;
+    $('lookup-out').textContent = 'looking up…';
+    try {
+      const r = await fetch('/v1/statute/' + encodeURIComponent(q));
+      const s = await r.json();
+      if (!s.found) { $('lookup-out').textContent = `no BNS section "${q}" in the gazette text or the First Schedule`; return; }
+      const cls = s.cognizable === 'cognizable' ? 'ok' : (s.cognizable === 'non_cognizable' ? 'warn' : 'bad');
+      $('lookup-out').innerHTML =
+        `<div><span class="tag ok">BNS ${esc(s.bns_section)}</span> <b>${esc(s.heading || '')}</b> <span class="muted">· Chapter ${esc(s.chapter || '?')} ${esc(s.chapter_title || '')} · gazette p. ${esc(s.gazette_page || '?')}</span></div>` +
+        `<div class="law">${esc(s.text || '(text not available)')}</div>` +
+        `<div style="margin-top:6px"><span class="tag ${cls}">${esc(s.cognizable)}</span> ` +
+        `${s.bailable ? `<span class="tag">${esc(s.bailable)}</span> ` : ''}${s.triable_by ? `<span class="muted">triable by ${esc(s.triable_by)}</span>` : ''}` +
+        `${s.schedule_note ? `<div class="law">${esc(s.schedule_note)}</div>` : ''}` +
+        `<div class="muted" style="font-size:12px">${esc(s.schedule_source)}</div></div>`;
+    } catch (e) { $('lookup-out').textContent = 'error: ' + e.message; }
+  };
+  $('lookup').addEventListener('click', lookup);
+  $('lookup-q').addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
+
+  $('draft').addEventListener('click', async () => {
+    const narrative = $('narrative').value.trim();
+    if (!narrative) { $('status').textContent = 'enter a complaint first'; return; }
+    $('status').textContent = 'drafting…'; $('draft').disabled = true;
+    try {
+      const r = await fetch('/v1/complaint/text', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ narrative, annotate: $('annotate').checked })
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.statusText); }
+      render(await r.json());
+      $('status').textContent = '';
+    } catch (e) {
+      $('status').textContent = 'error: ' + e.message;
+    } finally { $('draft').disabled = false; }
+  });
+
+  function render(d) {
+    const dec = d.decision;
+    $('decision').classList.remove('hidden');
+    $('route').textContent = dec.route; $('route').className = 'route ' + dec.route;
+    $('rationale').textContent = dec.rationale ? '— ' + dec.rationale : '';
+    // when nothing reached the threshold, say how far off it was -- without naming
+    // the runner-up: on short complaints the top score is often a wrong section
+    const best = (dec.ipc_top_k || [])[0];
+    $('classifier').textContent = (dec.classifier || '—') +
+      ((dec.predicted_ipc || []).length === 0 && best ? ` · no section reached the threshold (best score ${Number(best[1]).toFixed(2)})` : '');
+    $('translated').innerHTML = d.translation && d.translation.model
+      ? `<span class="tag">ta→en · ${esc(d.translation.model.split('/').pop())}</span> <span class="law" style="display:inline">${esc(d.narrative_en || '')}</span>`
+      : '<span class="muted">the complaint as given (no translation)</span>';
+
+    $('sections').innerHTML = dec.suggested_sections.length
+      ? dec.suggested_sections.map(s => {
+          const rank = s.retrieval_rank == null
+            ? '<span class="tag warn" title="the narrative shares no wording with the text of this section">no textual support</span>'
+            : `<span class="tag ${s.retrieval_rank <= 3 ? 'ok' : ''}" title="rank of this section when statute texts are retrieved against the narrative">text rank #${s.retrieval_rank}</span>`;
+          const bns = s.bns_text ? `<div class="law" title="BNS 2023, gazette text">${s.bns_heading ? '<b>' + esc(s.bns_heading) + '</b> ' : ''}${esc(s.bns_text)}</div>` : '';
+          const law = s.statute_text ? `<div class="law" style="opacity:.75" title="IPC text (ILSI training label; lineage, not the law filed under)">IPC ${esc(s.ipc_section)}: ${esc(s.statute_text)}</div>` : '';
+          // element-wise justification comes from the record, keyed by IPC source
+          const cand = (d.record.acts_sections || []).find(c => c.ipc_source === s.ipc_section);
+          const els = cand && cand.elements && cand.elements.length
+            ? '<ul class="els">' + cand.elements.map(e =>
+                `<li class="${e.satisfied}"><b>${e.satisfied === 'yes' ? '✓' : e.satisfied === 'no' ? '✗' : '?'}</b> ${esc(e.element)}` +
+                (e.satisfied !== 'yes' ? `<div class="muted">${esc(e.justification)}</div>` : `<span class="muted" title="${esc(e.justification)}"> · ${esc(e.justification.replace('narrative says: ', ''))}</span>`) +
+                `</li>`).join('') + '</ul>'
+            : '<div class="muted" style="margin-left:4px">elements not analysed for this section</div>';
+          return `<div class="sec"><span class="tag ok">${esc(s.bns_section)}</span> <span class="muted">${esc(s.offence)} · from IPC ${esc(s.ipc_section)} · ${esc(s.cognizable)}</span> ${rank}${bns}${law}${els}</div>`;
+        }).join('')
+      : '<span class="muted">none auto-applied</span>';
+
+    $('review').innerHTML = dec.review_flags.length
+      ? dec.review_flags.map(f =>
+          `<div class="sec"><span class="tag warn">IPC ${esc(f.ipc_section)} → ${esc(f.suggested_bns || '—')}</span> <span class="muted">${esc(f.reason)}${f.offence ? ' · ' + esc(f.offence) : ''}</span>${f.bns_text ? `<div class="law">${f.bns_heading ? '<b>' + esc(f.bns_heading) + '</b> ' : ''}${esc(f.bns_text)}</div>` : ''}${f.statute_text ? `<div class="law" style="opacity:.75">IPC ${esc(f.ipc_section)}: ${esc(f.statute_text)}</div>` : ''}</div>`).join('')
+      : '<span class="muted">nothing held back</span>';
+
+    $('cues').innerHTML = (dec.cue_hits || []).length
+      ? dec.cue_hits.map(h =>
+          `<div class="sec"><span class="tag ${h.cognizable === 'cognizable' ? 'bad' : 'warn'}" title="${esc(h.cognizable)}">IPC ${esc(h.ipc_section)} → ${esc(h.suggested_bns || '—')}</span> <span class="muted">${esc(h.offence)} · ${h.evidenced}/${h.total} ingredients in the original text: ${esc(h.cues.join(', '))} · not predicted by the classifier</span></div>`).join('')
+      : '<span class="muted">nothing the classifier missed by the cue scan</span>';
+    const fr = d.fill_report || {};
+    $('filled').innerHTML = (fr.filled || []).length
+      ? fr.filled.map(p => `<span class="tag">${esc(p)}</span>`).join('') +
+        ((fr.ambiguous || []).length ? '<br>ambiguous: ' + fr.ambiguous.map(p => `<span class="tag warn">${esc(p)}</span>`).join('') : '')
+      : '<span class="muted">none</span>';
+
+    $('grounded').innerHTML = d.narrative_grounded
+      ? '<span class="tag ok">faithfulness gate PASS</span>'
+      : '<span class="tag bad">faithfulness gate FAIL</span>';
+
+    $('asrflags').innerHTML = d.asr_flags.length
+      ? d.asr_flags.map(f => `<span class="tag bad">${esc(f)}</span>`).join('') + ' <span class="muted">transcript may contain words the complainant did not say</span>'
+      : '<span class="muted">none</span>';
+
+    const needs = [];
+    if (dec.route === 'OFFICER_REVIEW') needs.push('no section could be applied automatically — the officer must determine the offence');
+    if (dec.review_flags.length) needs.push(`${dec.review_flags.length} section mapping(s) need a human decision`);
+    const cog = (dec.cue_hits || []).filter(h => h.cognizable !== 'non_cognizable');
+    if (cog.length) needs.push(`the original text evidences ${cog.map(h => 'IPC ' + h.ipc_section + ' (' + h.cognizable + ')').join(', ')} which the classifier did not predict`);
+    if (d.asr_flags.length) needs.push('the ASR transcript is flagged — re-check against the audio before relying on any fact');
+    if ((fr.ambiguous || []).length) needs.push(`${fr.ambiguous.length} slot(s) had multiple readings and were left blank`);
+    if (!d.narrative_grounded) needs.push('the narrative did not pass the faithfulness gate');
+    $('review-notice').innerHTML = needs.length
+      ? '<strong>Before this can be used:</strong><ul class="flat">' + needs.map(n => `<li>${esc(n)}</li>`).join('') + '</ul>'
+      : '<strong>All machine-filled slots still require verification.</strong> Every value on the form must be confirmed with the complainant.';
+
+    // highlight annotation tags on the form
+    $('form').innerHTML = esc(d.if1_text).replace(/⟨[^⟩]*⟩/g, m => `<span class="mark">${m}</span>`);
+    $('json').textContent = JSON.stringify(d.record, null, 2);
+  }
+})();
+</script>
+</body>
+</html>

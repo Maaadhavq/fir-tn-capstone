@@ -1,0 +1,98 @@
+# ---------------------------------------------------------------------------
+# Vertical-slice pipeline configuration (IMPLEMENTATION.md §4).
+# ---------------------------------------------------------------------------
+
+slice:
+  # `make slice` runs a subsampled train set so the proof completes in minutes.
+  # `make slice-full` sets max_train_docs: null and runs the whole corpus.
+  max_train_docs: 8000
+  max_dev_docs: 2000
+  max_test_docs: 2000
+  n_asr_clips: 20
+  seed: 42
+
+statute_id:
+  # Which model serves predictions: tfidf | bert. TF-IDF is the default because
+  # it currently beats the encoder ~2:1 (PROGRESS.md findings 7/8). Flip this
+  # when a BERT run wins on the same test set.
+  default_classifier: tfidf
+  tfidf:
+    ngram_range: [1, 2]
+    min_df: 3
+    max_features: 200000
+    sublinear_tf: true
+    # tfidf | hashing | auto. TfidfVectorizer's 1-2-gram vocabulary dict killed
+    # the process on the 42k-doc corpus (7.7 GB WSL); hashing has no vocabulary.
+    # auto: tfidf below hashing_above_docs, hashing at/above -- keeps the 8k
+    # slice number exactly reproducible.
+    vectorizer: auto
+    hashing_above_docs: 20000
+    hashing_features: 262144
+    C: 4.0
+    max_iter: 1000
+    # 24 cores on this box but only ~7.7 GB RAM in WSL. liblinear converts X to
+    # float64 per worker (~750 MB each on the 42k-doc corpus); n_jobs=6 was
+    # OOM-killed on 2026-09-13 at 2.6 GB RSS and climbing. 2 fits comfortably.
+    # NEVER run another memory-heavy job (Whisper, BERT) alongside a full-corpus
+    # TF-IDF fit on this box.
+    n_jobs: 2
+  inlegalbert:
+    model: law-ai/InLegalBERT
+    max_seq_len: 512
+    truncation: head          # head | head_tail  (head_tail keeps the closing, where sections are named)
+    tail_fraction: 0.25
+    epochs: 2
+    batch_size: 8
+    grad_accum: 2
+    lr: 2.0e-5
+    warmup_ratio: 0.1
+    # ILSI averages 3.67 positive labels out of 100. Without positive-class
+    # weighting, plain BCE is minimised by predicting all-zeros -- the first run
+    # scored macro-F1 0.018. Mirrors class_weight=balanced on the TF-IDF side.
+    pos_weight: true
+    pos_weight_max: 50.0
+    # Finding 8 hypothesis #4: give the fresh 100-way head its own LR. 1.0 = off
+    # (shared LR). Try 10-20 once the full-corpus data-effect run has a clean number.
+    head_lr_multiplier: 1.0
+    # Decision threshold is tuned on dev by sweeping for best micro-F1,
+    # never fixed at 0.5 -- multi-label statute distributions are long-tailed.
+    threshold_sweep: [0.05, 0.95, 0.05]
+
+ipc_bns:
+  map_path: data/mapping/ipc_bns_map.csv
+  # Only these rows are applied without a human in the loop.
+  auto_apply_confidence: [high]
+  auto_apply_requires_no_review_flag: true
+
+asr:
+  model: Systran/faster-whisper-large-v3
+  compute_type: int8
+  device: auto            # cuda if CTranslate2 has sm_120 kernels, else cpu
+  language: ta
+  beam_size: 5
+  vad_filter: true
+  # Off: stops the 30s-window replay loop (clip 1916, 226% WER). See fir.asr.quality.
+  condition_on_previous_text: false
+  # One decoding pass at temperature 0. The library default is a fallback ladder
+  # [0,.2,.4,.6,.8,1.0] re-decoding every low-confidence window at higher sampling
+  # temperature; on Tamil that fires constantly, costs ~5x wall-clock and is the
+  # sampled path fabricated text comes from (finding 6f). A list restores the ladder.
+  temperature: 0.0
+  # > 0 decodes through BatchedInferencePipeline (VAD chunks decoded together):
+  # on a 2.5-minute recording RTF 0.31 -> 0.105 and WER 0.81 -> 0.49 at beam 5
+  # (finding 6f). 0 = the sequential 30 s sliding window.
+  batch_size: 8
+  split: test
+
+translate:
+  # Tamil -> English for the (English-only, ILSI-trained) statute classifier.
+  # Runs only when the Tamil share of alphabetic characters >= min_tamil_share.
+  # Output feeds the classifier alone; extraction/elements/narrative keep the original.
+  # Quality order: ai4bharat/indictrans2-indic-en-dist-200M (800 MB, MIT, GATED -- needs your HF
+  # login + accepting terms) > facebook/nllb-200-distilled-600M (2.5 GB, CC-BY-NC, ungated) >
+  # Helsinki-NLP/opus-mt-dra-en (621 MB, Apache-2.0, ungated, weakest). Interim default is the
+  # last so the node is provable without credentials or a large download. Swap when approved.
+  model: Helsinki-NLP/opus-mt-dra-en
+  device: auto
+  min_tamil_share: 0.3
+  max_new_tokens: 256
